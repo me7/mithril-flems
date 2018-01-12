@@ -1,0 +1,211 @@
+('', '.')
+
+--------------------------------------------
+('---', 'codemirrorcss.js')
+const csso = require('csso')
+    , fs = require('fs')
+
+const sheets = [
+  'node_modules/codemirror/lib/codemirror.css',
+  'node_modules/codemirror/theme/material.css',
+  'node_modules/codemirror/addon/fold/foldgutter.css',
+  'node_modules/codemirror/addon/dialog/dialog.css'
+]
+
+module.exports = csso.minify(
+  sheets
+  .map(f =>
+    fs.readFileSync(f, 'utf8')
+      .replace('\\25BE', '▾')
+      .replace('\\25B8', '▸')
+  )
+  .join('')
+).css
+
+
+--------------------------------------------
+('---', 'dirwalk.py')
+#!/usr/bin/python
+
+import os
+
+# traverse root directory, and list directories as dirs and files as files
+for root, dirs, files in os.walk("."):
+    path = root.split(os.sep)
+    print((len(path) - 1) * '---', os.path.basename(root))
+    for file in files:
+    	print
+    	print('--------------------------------------------')
+        print(len(path) * '---', file)
+        with open(file, 'r') as fin:
+    		print fin.read()
+
+--------------------------------------------
+('---', 'main.js')
+console.time('build') // eslint-disable-line
+
+const rollup = require('rollup')
+    , commonjs = require('rollup-plugin-commonjs')
+    , nodeResolve = require('rollup-plugin-node-resolve')
+    , buble = require('rollup-plugin-buble')
+    , uglify = require('rollup-plugin-uglify')
+    , filesize = require('rollup-plugin-filesize')
+    , replace = require('rollup-plugin-replace')
+    , string = require('rollup-plugin-string')
+    , codemirrorCss = require('./codemirrorcss')
+    , pkg = require('../package.json')
+
+// UMD
+rollup.rollup({
+  input: 'src/index.js',
+  plugins: [
+    replace({
+      'process.env.FLEMS_VERSION': JSON.stringify(pkg.version),
+      'window.m = m // wright hmr': '',
+      'b.setDebug(true)': '',
+      codemirrorStyles: JSON.stringify(codemirrorCss)
+    }),
+    string({ include: 'src/**/*.svg' }),
+    commonjs(),
+    nodeResolve(),
+    buble(),
+    uglify({ mangle: { reserved: ['flemsLoadScript'] }, compress: true }),
+    filesize()
+  ]
+})
+.then(bundle =>
+  bundle.write({
+    file: 'dist/flems.js',
+    name: 'Flems',
+    sourcemap: true,
+    format: 'umd'
+  })
+)
+.catch(console.error) // eslint-disable-line
+
+process.on('exit', () => console.timeEnd('build')) // eslint-disable-line
+
+
+--------------------------------------------
+('---', 'runtime.js')
+const fs = require('fs')
+    , rollup = require('rollup')
+    , commonjs = require('rollup-plugin-commonjs')
+    , nodeResolve = require('rollup-plugin-node-resolve')
+    , buble = require('rollup-plugin-buble')
+    , uglify = require('rollup-plugin-uglify')
+
+
+module.exports = rollup.rollup({
+  input: 'src/srcdoc/index.js',
+  plugins: [
+    commonjs(),
+    nodeResolve(),
+    buble(),
+    uglify({ mangle: { reserved: ['flemsLoadScript'] }, compress: true })
+  ]
+})
+.then(bundle => bundle.generate({ format: 'iife' }))
+.then(runtime =>
+  fs.writeFileSync('dist/runtime.html', [
+    '<!DOCTYPE html>',
+    '<script type="text/javascript" charset="utf-8">',
+    '\t' + runtime.code + '//# sourceURL=runtime.js',
+    '</script>'
+  ].join('\n'))
+)
+
+
+--------------------------------------------
+('---', 'script')
+
+
+--------------------------------------------
+('---', 'standalone.js')
+const fs = require('fs')
+
+const main = fs.readFileSync('dist/flems.js', 'utf8')
+    , runtime = fs.readFileSync('dist/runtime.html', 'utf8')
+
+fs.writeFileSync('dist/flems.html', [
+  '/*',
+  runtime,
+  '<!-- */',
+  main + '// -->'
+].join('\n'))
+
+
+--------------------------------------------
+('---', 'wright.html')
+<!DOCTYPE html>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<script src="flems.js" type="text/javascript" charset="utf-8"></script>
+<style type="text/css" media="screen">
+  html, body, .flems {
+    margin: 0;
+    width: 100%;
+    height: 100%;
+  }
+</style>
+<body>
+  <script type="text/javascript" charset="utf-8">
+    window.Flems(document.body, {}, 'runtime.html')
+  </script>
+</body>
+
+
+--------------------------------------------
+('---', 'wright.js')
+const wright = require('wright')
+    , rollup = require('rollup')
+    , commonjs = require('rollup-plugin-commonjs')
+    , nodeResolve = require('rollup-plugin-node-resolve')
+    , replace = require('rollup-plugin-replace')
+    , string = require('rollup-plugin-string')
+    , buble = require('rollup-plugin-buble')
+    , codemirrorCss = require('./codemirrorcss')
+    , pkg = require('../package.json')
+
+wright({
+  main: 'scripts/wright.html',
+  serve: 'dist',
+  // run: 'm.redraw',
+  debug: true,
+  js: {
+    watch: 'src/**/*.js',
+    path: 'flems.js',
+    compile: roll
+  },
+  execute: {
+    watch: 'src/srcdoc/index.js',
+    command: 'npm run build:runtime'
+  }
+})
+
+let cache = null
+function roll(dev) {
+  return rollup.rollup({
+    input: 'src/index.js',
+    cache: cache,
+    plugins: [
+      replace({
+        'process.env.FLEMS_VERSION': JSON.stringify(pkg.version),
+        codemirrorStyles: JSON.stringify(codemirrorCss)
+      }),
+      string({ include: 'src/**/*.svg' }),
+      commonjs(),
+      nodeResolve(),
+      buble()
+    ]
+  })
+  .then(bundle => {
+    cache = bundle
+    return bundle.generate({
+      name: 'Flems',
+      format: 'umd'
+    })
+  })
+  .then(result => result.code)
+}
+
